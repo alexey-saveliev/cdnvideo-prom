@@ -1,0 +1,120 @@
+version: '3'
+
+services:
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./volumes/prometheus/etc:/etc/prometheus/
+      - ./volumes/prometheus/data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+  
+  grafana:
+#    image: grafana-zabbix
+    image: grafana/grafana
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.grafana.entrypoints=https"
+      - "traefik.http.routers.grafana.rule=Host(`stat.usermod.ru`)"
+      - "traefik.http.routers.grafana.middlewares=SecurityHeaders"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "traefik.http.routers.grafana.tls.certresolver=LetsEncrypt"
+      - "traefik.http.routers.grafana-http.entrypoints=http"
+      - "traefik.http.routers.grafana-http.rule=Host(`stat.usermod.ru`)"
+      - "traefik.http.routers.grafana-http.middlewares=RedirectToHTTPS,SecurityHeaders"
+      - 'traefik.http.middlewares.RedirectToHTTPS.redirectscheme.scheme=https'
+      - 'traefik.http.middlewares.RedirectToHTTPS.redirectscheme.permanent=true'
+      - "traefik.http.middlewares.SecurityHeaders.headers.stsSeconds=15552000"
+    depends_on:
+      - prometheus
+    ports:
+      - 3000:3000
+    volumes:
+      - ./volumes/grafana/data:/var/lib/grafana
+      - ./volumes/grafana/etc:/etc/grafana
+    env_file:
+      - ./.grafana.env
+
+  json-exporter:
+    image: "quay.io/prometheuscommunity/json-exporter"
+    command:
+      - "--config.file=/config.yml"
+    ports:
+      - "7979:7979"
+    volumes:
+      - "./volumes/json-exporter/config.yml:/config.yml"
+
+  traefik:
+    image: "traefik:v2.8"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.entrypoints=webinterface"
+      - "traefik.http.routers.api.entrypoints=webinterface"
+      - "traefik.http.routers.dashboard.rule=Host(`stat.usermod.ru`)"
+      - "traefik.http.routers.api.rule=Host(`stat.usermod.ru`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.dashboard.service=dashboard@internal"
+      - "traefik.http.routers.api.service=api@internal"
+      - "traefik.http.services.dashboard.loadbalancer.server.port=8080"
+      - "traefik.http.routers.dashboard.middlewares=dashboard_auth,dashboard_redirect,dashboard_stripprefix"
+      - "traefik.http.routers.api.middlewares=dashboard_auth"
+      - 'traefik.http.middlewares.dashboard_auth.basicauth.users=admin:PASSWORD_HASH'
+      - 'traefik.http.middlewares.dashboard_redirect.redirectregex.regex=^(http:\/\/(\[[\w:.]+\]|[\w\._-]+)(:\d+)?)\/$$'
+      - 'traefik.http.middlewares.dashboard_redirect.redirectregex.replacement=$${1}/dashboard/'
+      - 'traefik.http.middlewares.dashboard_redirect.redirectregex.permanent=true'
+      - 'traefik.http.middlewares.dashboard_stripprefix.stripprefix.prefixes=/dashboard/,/dashboard'
+      - "traefik.http.services.dashboard.loadbalancer.server.port=8888"
+    command:
+#      - "--log.level=DEBUG"
+      - "--accesslog=true"
+#      - "--api.debug=true"
+#      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=traefik"
+      - "--entrypoints.http.address=:80"
+      - "--entrypoints.https.address=:443"
+      - "--entrypoints.webinterface.address=:8080"
+      #- "--providers.file.directory=/etc/traefik"
+      # Let's Encrypt Production
+      - "--certificatesresolvers.LetsEncrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.LetsEncrypt.acme.httpchallenge.entrypoint=http"
+      - "--certificatesresolvers.LetsEncrypt.acme.email=noc@vectorinfo.ru"
+      - "--certificatesresolvers.LetsEncrypt.acme.storage=/letsencrypt/acme.json"
+      # Let's Encrypt Staging
+      - "--certificatesresolvers.LetsEncryptStage.acme.httpchallenge=true"
+      - "--certificatesresolvers.LetsEncryptStage.acme.httpchallenge.entrypoint=http"
+      - "--certificatesresolvers.LetsEncryptStage.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"
+      - "--certificatesresolvers.LetsEncryptStage.acme.email=noc@vectorinfo.ru"
+      - "--certificatesresolvers.LetsEncryptStage.acme.storage=/letsencrypt/acme.json"
+
+    environment:
+      - "TZ=Europe/Moscow"
+    ports:
+      - "80:80"
+      - "443:443"
+#      - "88:88"
+      - "8080:8080"
+    volumes:
+      - "./volumes/traefik:/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    restart: unless-stopped
+
+volumes:
+    grafana_etc:
+      driver: local
+      driver_opts:
+        type: 'none'
+        o: 'bind'
+        device: ./volumes/grafana/etc
+    grafana_data:
+      driver: local
+      driver_opts:
+        type: 'none'
+        o: 'bind'
+        device: ./volumes/grafana/data

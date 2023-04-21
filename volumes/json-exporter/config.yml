@@ -1,0 +1,43 @@
+modules:
+  CDNVideoActiveStream:
+    metrics:
+      - name: cdnvideo_activestream
+        type: object
+        valuetype: gauge
+        help: Active stream metrics
+        path: "{ .result[*] }"
+        labels:
+          stream: '{ .stream }'
+        values:
+          views: '{ .views }'
+    headers:
+      CDN-AUTH-TOKEN: "TOKEN"
+  CDNVideoStreamStat:
+    metrics:
+      - name: cdnvideo_streamstat
+        type: object
+        valuetype: gauge
+        help: Stream statistics
+        path: "{ .result[*] }"
+        labels:
+          stream: '{ .stream }'
+        values:
+          views: '{ .views }'
+          views_max: '{ .views_max }'
+          users: '{ .users }'
+    headers:
+      CDN-AUTH-TOKEN: "TOKEN"
+  CDNVideoBWrealtime:
+    metrics:
+      - name: cdnvideo_bw_realtime
+        type: object
+        help: Account BW metrics
+        #      valuetype: gauge
+        path: "{ [*] }"
+        labels:
+          account: '{.account}'
+        values:
+          requests_per_second: '{.requests_per_second}'
+          bandwidth_out_bits_per_second: '{.bandwidth_out_bits_per_second}'
+    headers:
+      CDN-AUTH-TOKEN: "TOKEN"
